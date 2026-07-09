@@ -31,11 +31,15 @@ XUI_DbManager.slnx
 
 ## GitHub Release
 
-Tag a SemVer version with a `v` prefix and push it:
+Tag a SemVer version and push it. Both `v1.0.0` and `1.0.0` are accepted:
 
 ```text
 git tag v1.0.0
 git push origin v1.0.0
+
+# Also valid:
+git tag 1.0.0
+git push origin 1.0.0
 ```
 
 GitHub Actions will create a release with these Windows x64 assets:
@@ -53,5 +57,6 @@ The installer is built with Inno Setup and installs per-user under `%LOCALAPPDAT
 - On save, `settings.clients` is synchronized into `client_traffics`, `clients`, and `client_inbounds` when those tables exist.
 - Inbound export uses the same portable JSON shape accepted by 3x-ui's inbound import flow.
 - Keep a copy of the original database before large edits. This tool edits the selected `.db` file in place.
+
 
 

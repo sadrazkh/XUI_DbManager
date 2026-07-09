@@ -1,9 +1,18 @@
 name: Release
 
+run-name: Release ${{ github.ref_name }}
+
 on:
   push:
     tags:
       - 'v*'
+      - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, for example 1.0.0 or v1.0.0'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -25,19 +34,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Compute version from tag
+      - name: Compute release metadata
         run: |
-          $tag = '${{ github.ref_name }}'
-          $version = $tag -replace '^v', ''
+          $eventName = '${{ github.event_name }}'
+          $rawVersion = if ($eventName -eq 'workflow_dispatch') { '${{ github.event.inputs.version }}' } else { '${{ github.ref_name }}' }
+          $rawVersion = $rawVersion.Trim()
+          $version = $rawVersion -replace '^refs/tags/', '' -replace '^v', ''
 
           if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$') {
-            throw "Release tags must use SemVer, for example v1.2.3 or v1.2.3-beta.1. Current tag: $tag"
+            throw "Release version must be SemVer, for example v1.2.3, 1.2.3, or v1.2.3-beta.1. Current value: $rawVersion"
+          }
+
+          $releaseTag = if ($eventName -eq 'workflow_dispatch') {
+            if ($rawVersion.StartsWith('v')) { $rawVersion } else { "v$version" }
+          }
+          else {
+            '${{ github.ref_name }}'
           }
 
           $numericVersion = ($version -replace '-.*$', '')
@@ -49,6 +69,7 @@ jobs:
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "FILE_VERSION=$fileVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ASSET_VERSION=$assetVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PUBLISH_DIR=$PWD\artifacts\publish\$env:RUNTIME_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "RELEASE_DIR=$PWD\artifacts\release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -103,18 +124,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
           $assets = @(Get-ChildItem -LiteralPath $env:RELEASE_DIR -File | ForEach-Object { $_.FullName })
           if ($assets.Count -eq 0) {
             throw 'No release assets were produced.'
           }
 
-          gh release view $tag *> $null
+          gh release view $env:RELEASE_TAG *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $assets --clobber
+            gh release upload $env:RELEASE_TAG $assets --clobber
           }
           else {
-            gh release create $tag $assets `
+            gh release create $env:RELEASE_TAG $assets `
+              --target '${{ github.sha }}' `
               --title "XUI DB Manager $env:APP_VERSION" `
-              --notes "Automated Windows release for $tag. Includes portable ZIP and setup installer."
+              --notes "Automated Windows release for $env:RELEASE_TAG. Includes portable ZIP and setup installer."
           }
+
