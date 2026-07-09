@@ -1,0 +1,13 @@
+[2026-07-09 09:46:27] Fatal UI exception
+System.InvalidOperationException: Must add values for the following parameters: 
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteNonQuery()
+   at XuiDbManager.XuiRepository.ExecuteUpdate(String table, Dictionary`2 values, String where, Dictionary`2 whereParams, SqliteTransaction tx) in C:\Users\sadra\Documents\XUI_DbManager\XuiRepository.cs:line 502
+   at XuiDbManager.XuiRepository.SaveClientStats(InboundRow inbound, SqliteTransaction tx) in C:\Users\sadra\Documents\XUI_DbManager\XuiRepository.cs:line 202
+   at XuiDbManager.XuiRepository.ImportInboundJson(String json) in C:\Users\sadra\Documents\XUI_DbManager\XuiRepository.cs:line 90
+   at XuiDbManager.SelfTest.Run() in C:\Users\sadra\Documents\XUI_DbManager\SelfTest.cs:line 26
+   at XuiDbManager.Program.Main(String[] args) in C:\Users\sadra\Documents\XUI_DbManager\Program.cs:line 12
+

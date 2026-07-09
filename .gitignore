@@ -1,0 +1,6 @@
+bin/
+obj/
+publish/
+.repo-3x-ui/
+*.user
+*.suo
