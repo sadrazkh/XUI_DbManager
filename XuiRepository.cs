@@ -95,13 +95,40 @@ public sealed class XuiRepository : IDisposable
 
     public void SaveInbound(InboundRow inbound)
     {
+        ValidateInboundJson(inbound);
+
+        using var tx = _connection.BeginTransaction();
+        SaveInboundCore(inbound, tx);
+        tx.Commit();
+    }
+
+    public void SaveInbounds(IEnumerable<InboundRow> inbounds)
+    {
+        var list = inbounds
+            .GroupBy(x => x.Id)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var inbound in list)
+            ValidateInboundJson(inbound);
+
+        using var tx = _connection.BeginTransaction();
+        foreach (var inbound in list)
+            SaveInboundCore(inbound, tx);
+        tx.Commit();
+    }
+
+    private static void ValidateInboundJson(InboundRow inbound)
+    {
         JsonUtil.NormalizeObjectJson(inbound.Settings);
         if (!string.IsNullOrWhiteSpace(inbound.StreamSettings))
             JsonUtil.NormalizeObjectJson(inbound.StreamSettings);
         if (!string.IsNullOrWhiteSpace(inbound.Sniffing))
             JsonUtil.NormalizeObjectJson(inbound.Sniffing);
+    }
 
-        using var tx = _connection.BeginTransaction();
+    private void SaveInboundCore(InboundRow inbound, SqliteTransaction tx)
+    {
         var updates = new Dictionary<string, object?>
         {
             ["user_id"] = inbound.UserId,
@@ -130,7 +157,6 @@ public sealed class XuiRepository : IDisposable
         ExecuteUpdate("inbounds", updates, "id = @id", new Dictionary<string, object?> { ["id"] = inbound.Id }, tx);
         SaveClientStats(inbound, tx);
         SyncNormalizedClients(inbound, tx);
-        tx.Commit();
     }
 
     private int InsertInbound(InboundRow inbound, SqliteTransaction tx)
@@ -584,3 +610,4 @@ public sealed class XuiRepository : IDisposable
     private static long GetLong(IDataRecord reader, string name, long fallback = 0) => IsNull(reader, name) ? fallback : Convert.ToInt64(reader[name]);
     private static bool GetBool(IDataRecord reader, string name, bool fallback = false) => IsNull(reader, name) ? fallback : Convert.ToInt32(reader[name]) != 0;
 }
+

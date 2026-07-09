@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 
 namespace XuiDbManager;
@@ -27,7 +28,52 @@ public static class SelfTest
         if (newId <= inbound.Id)
             throw new InvalidOperationException("Self-test failed: import did not create a new inbound.");
 
+        TestFormatting();
+        TestClientMove(repo, inbound.Id, newId);
+
         return 0;
+    }
+
+    private static void TestFormatting()
+    {
+        if (ClientFormat.ParseLimitBytes("1 GB") != 1_073_741_824)
+            throw new InvalidOperationException("Self-test failed: GB traffic parsing mismatch.");
+        if (ClientFormat.ParseLimitBytes("Unlimited") != 0)
+            throw new InvalidOperationException("Self-test failed: unlimited traffic parsing mismatch.");
+        if (ClientFormat.ParseExpiry("Never") != 0)
+            throw new InvalidOperationException("Self-test failed: expiry parsing mismatch.");
+        if (string.IsNullOrWhiteSpace(ClientFormat.FormatTrafficBytes(1_073_741_824)))
+            throw new InvalidOperationException("Self-test failed: traffic formatting returned empty text.");
+    }
+
+    private static void TestClientMove(XuiRepository repo, int sourceId, int destinationId)
+    {
+        var inbounds = repo.LoadInbounds();
+        var source = inbounds.First(x => x.Id == sourceId);
+        var destination = inbounds.First(x => x.Id == destinationId);
+
+        var sourceSettings = JsonUtil.ParseObjectOrEmpty(source.Settings);
+        var sourceClients = JsonUtil.GetClientsArray(sourceSettings);
+        if (sourceClients.Count == 0)
+            throw new InvalidOperationException("Self-test failed: source client missing before move.");
+
+        var moved = sourceClients[0]!.DeepClone();
+        sourceClients.RemoveAt(0);
+        source.Settings = sourceSettings.ToJsonString(JsonUtil.PrettyJson);
+
+        var destinationSettings = JsonUtil.ParseObjectOrEmpty(destination.Settings);
+        destinationSettings["clients"] = new JsonArray(moved);
+        destination.Settings = destinationSettings.ToJsonString(JsonUtil.PrettyJson);
+
+        repo.SaveInbounds([destination, source]);
+
+        var afterMove = repo.LoadInbounds();
+        var movedSource = afterMove.First(x => x.Id == sourceId);
+        var movedDestination = afterMove.First(x => x.Id == destinationId);
+        if (JsonUtil.GetClientsArray(JsonUtil.ParseObjectOrEmpty(movedSource.Settings)).Count != 0)
+            throw new InvalidOperationException("Self-test failed: moved client still exists in source inbound.");
+        if (JsonUtil.GetClientsArray(JsonUtil.ParseObjectOrEmpty(movedDestination.Settings)).Count != 1)
+            throw new InvalidOperationException("Self-test failed: moved client was not saved in destination inbound.");
     }
 
     private static void CreateSampleDb(string path)

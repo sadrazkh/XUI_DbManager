@@ -119,6 +119,17 @@ public sealed class MainForm : Form
 
     private Control CreateDatabaseView(DatabaseDocument doc)
     {
+        BuildAllClientRows(doc);
+        ApplyAllClientFilter(doc, doc.AllClientSearch);
+
+        var rootTabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 5) };
+        rootTabs.TabPages.Add(new TabPage("Inbounds") { Controls = { CreateInboundsView(doc) } });
+        rootTabs.TabPages.Add(new TabPage("All Clients") { Controls = { CreateAllClientsPage(doc) } });
+        return rootTabs;
+    }
+
+    private Control CreateInboundsView(DatabaseDocument doc)
+    {
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 620, BackColor = BorderColor };
         var left = new TableLayoutPanel
         {
@@ -157,12 +168,7 @@ public sealed class MainForm : Form
             ColumnHeadersHeight = 38,
             EnableHeadersVisualStyles = false
         };
-        inboundGrid.RowTemplate.Height = 34;
-        inboundGrid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(239, 246, 255);
-        inboundGrid.ColumnHeadersDefaultCellStyle.ForeColor = TextMain;
-        inboundGrid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9.5f);
-        inboundGrid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(43, 108, 176);
-        inboundGrid.DefaultCellStyle.SelectionForeColor = Color.White;
+        StyleGrid(inboundGrid);
         inboundGrid.Columns.Add(CheckColumn(nameof(InboundRow.Enable), "On", 46));
         inboundGrid.Columns.Add(TextColumn(nameof(InboundRow.Id), "ID", 52, true));
         inboundGrid.Columns.Add(TextColumn(nameof(InboundRow.Remark), "Remark", 210));
@@ -208,6 +214,343 @@ public sealed class MainForm : Form
         return split;
     }
 
+    private Control CreateAllClientsPage(DatabaseDocument doc)
+    {
+        ApplyAllClientFilter(doc, doc.AllClientSearch);
+
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            BackColor = AppBack,
+            Padding = new Padding(12)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var toolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = AppBack,
+            Padding = new Padding(0, 6, 0, 6)
+        };
+
+        var searchBox = new TextBox
+        {
+            Width = 360,
+            Text = doc.AllClientSearch,
+            PlaceholderText = "Search all client fields...",
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(8, 4, 18, 4)
+        };
+        var moveTarget = new ComboBox
+        {
+            Width = 320,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(8, 4, 8, 4)
+        };
+        foreach (var inbound in doc.Inbounds)
+            moveTarget.Items.Add(new InboundMoveTarget(inbound));
+        if (moveTarget.Items.Count > 0)
+            moveTarget.SelectedIndex = 0;
+
+        var moveButton = new Button
+        {
+            Text = "Move selected",
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Primary,
+            ForeColor = Color.White,
+            Margin = new Padding(2, 2, 18, 2)
+        };
+        moveButton.FlatAppearance.BorderSize = 0;
+
+        var countLabel = new Label
+        {
+            AutoSize = true,
+            ForeColor = TextMuted,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(8, 9, 0, 0)
+        };
+        UpdateAllClientCount(doc, countLabel);
+
+        toolbar.Controls.Add(new Label { Text = "Search", AutoSize = true, ForeColor = TextMain, Margin = new Padding(0, 9, 0, 0) });
+        toolbar.Controls.Add(searchBox);
+        toolbar.Controls.Add(new Label { Text = "Move to", AutoSize = true, ForeColor = TextMain, Margin = new Padding(0, 9, 0, 0) });
+        toolbar.Controls.Add(moveTarget);
+        toolbar.Controls.Add(moveButton);
+        toolbar.Controls.Add(countLabel);
+        root.Controls.Add(toolbar, 0, 0);
+
+        var allClientGrid = new DataGridView
+        {
+            Dock = DockStyle.Fill,
+            AutoGenerateColumns = false,
+            DataSource = doc.FilteredAllClients,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            BackgroundColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            RowHeadersVisible = false,
+            AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None,
+            AllowUserToResizeRows = false,
+            GridColor = BorderColor,
+            ColumnHeadersHeight = 38,
+            EnableHeadersVisualStyles = false,
+            EditMode = DataGridViewEditMode.EditOnEnter
+        };
+        StyleGrid(allClientGrid);
+        allClientGrid.Columns.Add(CheckColumn(nameof(AllClientRow.Enable), "On", 46));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.InboundId), "Inbound ID", 82, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.InboundRemark), "Inbound", 180, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Protocol), "Protocol", 82, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Port), "Port", 62, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Email), "Email", 180));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Used), "Used", 95, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Up), "Upload", 90, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Down), "Download", 95, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Limit), "Limit", 110));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Expiry), "Expiry", 145));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.LastOnline), "Last Online", 145, true));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Id), "UUID/ID", 250));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Password), "Password", 140));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Flow), "Flow", 150));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Security), "Security", 100));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.SubId), "Sub ID", 150));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.LimitIp), "IP Limit", 80));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Comment), "Comment", 220));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.Group), "Group", 120));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.PublicKey), "WG Public", 180));
+        allClientGrid.Columns.Add(TextColumn(nameof(AllClientRow.AllowedIPs), "WG Allowed IPs", 180));
+        root.Controls.Add(allClientGrid, 0, 1);
+
+        var allClientGridReady = false;
+        allClientGrid.DataError += (_, e) =>
+        {
+            e.ThrowException = false;
+            SetStatus($"Client cell value is invalid: {e.Exception?.Message}");
+        };
+        allClientGrid.CellValidating += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0)
+                return;
+
+            var property = allClientGrid.Columns[e.ColumnIndex].DataPropertyName;
+            try
+            {
+                if (property == nameof(AllClientRow.Limit))
+                    ClientFormat.ParseLimitBytes(Convert.ToString(e.FormattedValue));
+                if (property == nameof(AllClientRow.Expiry))
+                    ClientFormat.ParseExpiry(Convert.ToString(e.FormattedValue));
+            }
+            catch (Exception ex)
+            {
+                e.Cancel = true;
+                SetStatus(ex.Message);
+            }
+        };
+        allClientGrid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (allClientGrid.IsCurrentCellDirty)
+                allClientGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        };
+        allClientGrid.CellEndEdit += (_, e) =>
+        {
+            if (!allClientGridReady || e.RowIndex < 0 || e.ColumnIndex < 0)
+                return;
+            if (allClientGrid.Columns[e.ColumnIndex].ReadOnly)
+                return;
+            if (allClientGrid.Rows[e.RowIndex].DataBoundItem is AllClientRow row)
+                SaveAllClientRow(doc, row, allClientGrid, countLabel, "Client saved");
+        };
+        allClientGrid.CellValueChanged += (_, e) =>
+        {
+            if (!allClientGridReady || e.RowIndex < 0 || e.ColumnIndex < 0)
+                return;
+            if (allClientGrid.Columns[e.ColumnIndex].DataPropertyName != nameof(AllClientRow.Enable))
+                return;
+            if (allClientGrid.Rows[e.RowIndex].DataBoundItem is AllClientRow row)
+                SaveAllClientRow(doc, row, allClientGrid, countLabel, "Client saved");
+        };
+        allClientGrid.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled = true;
+                allClientGrid.EndEdit(DataGridViewDataErrorContexts.Commit);
+            }
+        };
+        searchBox.TextChanged += (_, _) =>
+        {
+            ApplyAllClientFilter(doc, searchBox.Text);
+            UpdateAllClientCount(doc, countLabel);
+        };
+        moveButton.Click += (_, _) => MoveSelectedClient(doc, allClientGrid, moveTarget, countLabel);
+        allClientGridReady = true;
+
+        return root;
+    }
+
+    private void StyleGrid(DataGridView grid)
+    {
+        grid.RowTemplate.Height = 34;
+        grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(239, 246, 255);
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = TextMain;
+        grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI Semibold", 9.5f);
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(43, 108, 176);
+        grid.DefaultCellStyle.SelectionForeColor = Color.White;
+    }
+
+    private static void BuildAllClientRows(DatabaseDocument doc)
+    {
+        doc.AllClientRows.Clear();
+        foreach (var inbound in doc.Inbounds)
+        {
+            JsonObject settings;
+            try
+            {
+                settings = JsonUtil.ParseObjectOrEmpty(inbound.Settings);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var stats = inbound.ClientStats
+                .Where(x => !string.IsNullOrWhiteSpace(x.Email))
+                .GroupBy(x => x.Email, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var client in JsonUtil.GetClientsArray(settings).OfType<JsonObject>().Select(JsonUtil.ClientFromNode))
+            {
+                stats.TryGetValue(client.Email, out var traffic);
+                doc.AllClientRows.Add(new AllClientRow(inbound, client, traffic));
+            }
+        }
+    }
+
+    private static void ApplyAllClientFilter(DatabaseDocument doc, string? search)
+    {
+        doc.AllClientSearch = search ?? "";
+        var terms = doc.AllClientSearch
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        doc.FilteredAllClients.Clear();
+        foreach (var row in doc.AllClientRows)
+        {
+            if (terms.Length == 0 || terms.All(term => row.SearchText.Contains(term, StringComparison.OrdinalIgnoreCase)))
+                doc.FilteredAllClients.Add(row);
+        }
+    }
+
+    private static void UpdateAllClientCount(DatabaseDocument doc, Label label)
+    {
+        label.Text = $"{doc.FilteredAllClients.Count} / {doc.AllClientRows.Count} clients";
+    }
+
+    private void SaveAllClientRow(DatabaseDocument doc, AllClientRow row, DataGridView grid, Label countLabel, string message)
+    {
+        if (_isSaving)
+            return;
+
+        var selectedId = row.InboundId;
+        _isSaving = true;
+        try
+        {
+            grid.EndEdit(DataGridViewDataErrorContexts.Commit);
+            ApplyAllClientsToInbound(doc, row.Inbound);
+            doc.Repository.SaveInbound(row.Inbound);
+            ApplyAllClientFilter(doc, doc.AllClientSearch);
+            UpdateAllClientCount(doc, countLabel);
+            grid.Refresh();
+            SetStatus(message);
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex);
+            RevertCurrentDocument(doc, selectedId, "All Clients");
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void MoveSelectedClient(DatabaseDocument doc, DataGridView grid, ComboBox moveTarget, Label countLabel)
+    {
+        if (grid.CurrentRow?.DataBoundItem is not AllClientRow row)
+        {
+            SetStatus("Select a client first");
+            return;
+        }
+        if (moveTarget.SelectedItem is not InboundMoveTarget target)
+        {
+            SetStatus("Select target inbound");
+            return;
+        }
+        if (target.Inbound.Id == row.InboundId)
+        {
+            SetStatus("Client is already in that inbound");
+            return;
+        }
+        if (doc.AllClientRows.Any(x => x.Inbound.Id == target.Inbound.Id && !ReferenceEquals(x, row) && string.Equals(x.Email, row.Email, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(this, $"Target inbound already has a client with email '{row.Email}'.", "XUI DB Manager", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var source = row.Inbound;
+        var destination = target.Inbound;
+        try
+        {
+            grid.EndEdit(DataGridViewDataErrorContexts.Commit);
+            doc.AllClientRows.Remove(row);
+            doc.AllClientRows.Add(new AllClientRow(destination, row.Client, row.Traffic));
+            ApplyAllClientsToInbound(doc, destination);
+            ApplyAllClientsToInbound(doc, source);
+            doc.Repository.SaveInbounds([destination, source]);
+            ApplyAllClientFilter(doc, doc.AllClientSearch);
+            UpdateAllClientCount(doc, countLabel);
+            grid.Refresh();
+            doc.CurrentInbound = destination;
+            SetStatus($"Moved {row.Email} to inbound {destination.Id}");
+        }
+        catch (Exception ex)
+        {
+            ShowError(ex);
+            RevertCurrentDocument(doc, source.Id, "All Clients");
+        }
+    }
+
+    private static void ApplyAllClientsToInbound(DatabaseDocument doc, InboundRow inbound)
+    {
+        var settings = JsonUtil.ParseObjectOrEmpty(inbound.Settings);
+        var clients = new JsonArray();
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        foreach (var row in doc.AllClientRows.Where(x => x.Inbound.Id == inbound.Id && !string.IsNullOrWhiteSpace(x.Email)))
+        {
+            if (row.Client.CreatedAt == 0)
+                row.Client.CreatedAt = now;
+            row.Client.UpdatedAt = now;
+            clients.Add(JsonUtil.NodeFromClient(row.Client));
+        }
+
+        settings["clients"] = clients;
+        inbound.Settings = settings.ToJsonString(JsonUtil.PrettyJson);
+    }
+
+    private sealed class InboundMoveTarget
+    {
+        public InboundMoveTarget(InboundRow inbound) => Inbound = inbound;
+        public InboundRow Inbound { get; }
+        public override string ToString() => $"{Inbound.Id} - {Inbound.Remark} ({Inbound.Protocol}:{Inbound.Port})";
+    }
     private void SelectInbound(DatabaseDocument doc, InboundRow inbound, Control detailPanel)
     {
         doc.CurrentInbound = inbound;
@@ -573,12 +916,12 @@ public sealed class MainForm : Form
         }
     }
 
-    private void RevertCurrentDocument(DatabaseDocument doc, int selectedId)
+    private void RevertCurrentDocument(DatabaseDocument doc, int selectedId, string? selectedView = null)
     {
         try
         {
             LoadDocument(doc, selectedId);
-            RefreshCurrentTab(doc);
+            RefreshCurrentTab(doc, selectedView);
             SetStatus("Save failed; reverted to database values");
         }
         catch (Exception reloadEx)
@@ -720,15 +1063,24 @@ public sealed class MainForm : Form
             : doc.CurrentInbound is null
                 ? doc.Inbounds.FirstOrDefault()
                 : doc.Inbounds.FirstOrDefault(x => x.Id == doc.CurrentInbound.Id) ?? doc.Inbounds.FirstOrDefault();
+        BuildAllClientRows(doc);
+        ApplyAllClientFilter(doc, doc.AllClientSearch);
     }
 
-    private void RefreshCurrentTab(DatabaseDocument doc)
+    private void RefreshCurrentTab(DatabaseDocument doc, string? selectedView = null)
     {
         var page = _tabs.SelectedTab;
         if (page is null)
             return;
         page.Controls.Clear();
-        page.Controls.Add(CreateDatabaseView(doc));
+        var view = CreateDatabaseView(doc);
+        page.Controls.Add(view);
+        if (selectedView is not null && view is TabControl tabs)
+        {
+            var tab = tabs.TabPages.Cast<TabPage>().FirstOrDefault(x => string.Equals(x.Text, selectedView, StringComparison.OrdinalIgnoreCase));
+            if (tab is not null)
+                tabs.SelectedTab = tab;
+        }
     }
 
     private DatabaseDocument? CurrentDocument()
@@ -738,8 +1090,16 @@ public sealed class MainForm : Form
 
     private TabControl? CurrentDetailTabs()
     {
-        if (_tabs.SelectedTab is { Controls.Count: > 0 } page && page.Controls[0] is SplitContainer split && split.Panel2.Controls.Count > 0)
-            return split.Panel2.Controls[0] as TabControl;
+        var page = _tabs.SelectedTab;
+        if (page is null)
+            return null;
+
+        foreach (var split in Descendants<SplitContainer>(page))
+        {
+            if (split.Panel2.Controls.Count > 0 && split.Panel2.Controls[0] is TabControl tabs)
+                return tabs;
+        }
+
         return null;
     }
 
@@ -796,3 +1156,7 @@ public sealed class MainForm : Form
         }
     }
 }
+
+
+
+

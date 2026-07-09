@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: Build Windows release
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    env:
+      PROJECT_FILE: XuiDbManager.csproj
+      APP_NAME: XUI_DbManager
+      RUNTIME_ID: win-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compute version from tag
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag -replace '^v', ''
+
+          if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$') {
+            throw "Release tags must use SemVer, for example v1.2.3 or v1.2.3-beta.1. Current tag: $tag"
+          }
+
+          $numericVersion = ($version -replace '-.*$', '')
+          $parts = @($numericVersion -split '\.')
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $fileVersion = ($parts[0..3] -join '.')
+          $assetVersion = $version -replace '[^0-9A-Za-z._-]', '-'
+
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FILE_VERSION=$fileVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ASSET_VERSION=$assetVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PUBLISH_DIR=$PWD\artifacts\publish\$env:RUNTIME_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_DIR=$PWD\artifacts\release" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore
+        run: dotnet restore $env:PROJECT_FILE
+
+      - name: Publish portable app
+        run: |
+          dotnet publish $env:PROJECT_FILE `
+            --configuration Release `
+            --runtime $env:RUNTIME_ID `
+            --self-contained true `
+            --output $env:PUBLISH_DIR `
+            -p:Version=$env:APP_VERSION `
+            -p:AssemblyVersion=$env:FILE_VERSION `
+            -p:FileVersion=$env:FILE_VERSION `
+            -p:InformationalVersion=$env:APP_VERSION `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:PublishTrimmed=false `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+      - name: Create portable zip
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
+          $zipPath = Join-Path $env:RELEASE_DIR "$($env:APP_NAME)_Portable_v$($env:ASSET_VERSION)_$($env:RUNTIME_ID).zip"
+          Compress-Archive -Path "$env:PUBLISH_DIR\*" -DestinationPath $zipPath -Force
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            $iscc = Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw 'ISCC.exe was not found after installing Inno Setup.'
+          }
+
+          $outputBase = "$($env:APP_NAME)_Setup_v$($env:ASSET_VERSION)_$($env:RUNTIME_ID)"
+          & $iscc ".\installer\XUI_DbManager.iss" `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DSourceDir=$env:PUBLISH_DIR" `
+            "/DOutputDir=$env:RELEASE_DIR" `
+            "/DOutputBaseFilename=$outputBase"
+
+      - name: Upload GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $assets = @(Get-ChildItem -LiteralPath $env:RELEASE_DIR -File | ForEach-Object { $_.FullName })
+          if ($assets.Count -eq 0) {
+            throw 'No release assets were produced.'
+          }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+          }
+          else {
+            gh release create $tag $assets `
+              --title "XUI DB Manager $env:APP_VERSION" `
+              --notes "Automated Windows release for $tag. Includes portable ZIP and setup installer."
+          }
