@@ -1,6 +1,28 @@
-bin/
-obj/
+# Build outputs
+[Bb]in/
+[Oo]bj/
 publish/
-.repo-3x-ui/
+[Pp]ublish/
+build-check*/
+
+# IDE and user-specific files
+.vs/
 *.user
 *.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Test, logs, and temp files
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+logs/
+*.log
+*.tmp
+*.cache
+
+# Local mirrors / fetched repositories
+.repo-3x-ui/
